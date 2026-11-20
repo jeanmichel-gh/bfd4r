@@ -39,8 +39,14 @@ bfd/validation.rb   BFD::Validation: the receive rules of RFC 5880 6.8.6
 bfd/session.rb      BFD::Session: the state machine and timers of RFC 5880
                     6.8, told the time, answering with actions
 bfd/runtime/        the clock and the scheduler, copied from isis
+bfd/fault.rb        BFD::Fault: the catalog of crafted packets, one per
+                    Validation finding
+bfd/behaviour.rb    BFD::Behaviour: a peer that misbehaves over time, on
+                    one of eight scripts
 test/unit/          the unit tier: one test file per source file
 test/unit/docs/     tests that hold docs/ to the code
+test/functional/    the functional tier: our session against each
+                    behaviour, and each fault, on a manual clock
 test/support/       pcap.rb, which reads the fixtures; pair.rb, two
                     sessions joined on a manual clock
 test/fixtures/      captures of FRR's bfdd and BIRD, below
@@ -129,10 +135,18 @@ matrix and in routescope's labs. They do not replace it.
 ```sh
 bundle exec ruby test/run_unit.rb
 bundle exec ruby --enable-frozen-string-literal test/run_unit.rb
+bundle exec ruby test/run_functional.rb
 ```
 
-The functional, interop and lab tiers come with the steps that need
-them (`docs/design/bfd.md` in routescope, "Tests").
+The functional tier runs our session against each `Behaviour` and
+sends it each `Fault`, on a manual clock, in one process. `bfdd4r` and
+`bfd4r-sim` join it in steps 4 and 5. The interop and lab tiers come
+with the steps that need them (`docs/design/bfd.md` in routescope,
+"Tests").
+
+- **Every Fault entry makes exactly one Validation finding**, and every
+  finding has an entry. A test checks both.
+- **Every Behaviour script has a functional test named for it.**
 
 ## Rules for agents
 
@@ -167,8 +181,8 @@ The steps are in routescope's `docs/design/bfd.md`, "Work".
 | Step | Status |
 | --- | --- |
 | 1. `Control`, the authentication sections, `Validation` | Done, #1 |
-| 2. `Session` on a manual clock | This pull request |
-| 3. `Fault` and `Behaviour`, the functional tier | Not started |
+| 2. `Session` on a manual clock | Done, #2 |
+| 3. `Fault` and `Behaviour`, the functional tier | This pull request |
 | 4. `bfdd4r` and `bfd4r-cli`, interop with FRR and BIRD | Not started |
 | 5. `bfd4r-sim` and the fault matrix | Not started |
 | 6. The clients in isis, ospfv2 and bgp4r | Not started |

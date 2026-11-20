@@ -36,7 +36,8 @@ module BFD
       end
     end
 
-    # A received packet that RFC 5880 6.8.6 or RFC 5881 5 discards.
+    # A received packet that RFC 5880 6.8.6 or RFC 5881 5 discards: a
+    # Control, or the octets when they are too short to be one.
     Discard = Struct.new(:packet, :findings) do
       def to_s
         "discard: #{findings.map(&:name).join(', ')}"
@@ -180,9 +181,12 @@ module BFD
     # discard rules on. ttl: the received TTL or Hop Limit, checked as
     # RFC 5881 5 says when given; payload: the octets UDP carried.
     def receive(packet, now, ttl: nil, payload: nil)
-      packet = Control.new(packet) if packet.is_a?(String)
+      # Checked before it is read, so octets too short to be a packet are
+      # discarded, not raised on.
       findings = Validation.check(packet, payload: payload, known: [@local_discr], auth: false, ttl: ttl)
       return [Discard.new(packet, findings)] if findings.any? { |f| f.action == :discard }
+
+      packet = Control.new(packet) if packet.is_a?(String)
 
       out = []
       @remote_discr = packet.my_discr
