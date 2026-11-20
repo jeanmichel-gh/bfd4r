@@ -47,8 +47,11 @@ module BFD
     class Core
       # The defaults of routescope docs/design/bfd.md: FRR's, 300 ms x 3.
       DEFAULTS = { desired_min_tx: 300_000, required_min_rx: 300_000, detect_mult: 3 }.freeze
-      # The floor, until step 4 measures what holds: 50 ms.
-      FLOOR = 50_000
+      # The least Desired Min TX and Required Min RX a client may ask
+      # for, by default. 300 ms held for an hour with every core busy;
+      # 50, 100 and 200 ms did not (docs/timing.md). bfdd4r's file may
+      # lower it, to measure or on a router with cores to spare.
+      FLOOR = 300_000
 
       # One session and what the daemon keeps about it.
       class Entry
@@ -79,9 +82,12 @@ module BFD
         end
       end
 
-      attr_reader :events, :counters
+      attr_reader :events, :counters, :floor
 
-      def initialize(transport:, scheduler:, random: Random.new, events: nil)
+      def initialize(transport:, scheduler:, random: Random.new, events: nil, floor: FLOOR)
+        raise ArgumentError, "floor #{floor.inspect} is not a positive number of microseconds" unless floor.is_a?(Integer) && floor.positive?
+
+        @floor = floor
         @transport = transport
         @scheduler = scheduler
         @random = random
@@ -201,7 +207,7 @@ module BFD
 
         %i[desired_min_tx required_min_rx].each do |k|
           next unless timers.key?(k)
-          raise ArgumentError, "#{k} #{timers[k]} is under the floor of #{FLOOR} microseconds" if timers[k] < FLOOR
+          raise ArgumentError, "#{k} #{timers[k]} is under the floor of #{@floor} microseconds" if timers[k] < @floor
         end
       end
 

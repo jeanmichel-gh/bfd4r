@@ -78,16 +78,27 @@ class Core_Test < Test::Unit::TestCase
     assert_equal [300_000, 300_000, 3], [s.desired_min_tx, s.required_min_rx_interval, s.detect_mult]
   end
 
+  # docs/timing.md: 300 ms held for an hour with every core busy.
   def test_timers_are_checked
     assert_raise(ArgumentError) { add(hold: 3) }
-    assert_raise(ArgumentError) { add(desired_min_tx: 49_999) }
-    assert_nothing_raised { add(desired_min_tx: 50_000) }
+    assert_raise(ArgumentError) { add(desired_min_tx: 299_999) }
+    assert_raise(ArgumentError) { add(required_min_rx: 299_999) }
+    assert_nothing_raised { add(desired_min_tx: 300_000, required_min_rx: 300_000) }
+  end
+
+  def test_the_floor_may_be_lowered
+    core = Daemon::Core.new(transport: @wire, scheduler: @scheduler, random: Random.new(1), floor: 50_000)
+    assert_equal 50_000, core.floor
+    assert_raise(ArgumentError) { core.add(interface: 'eth1', peer: '10.0.0.2', local: '10.0.0.1', client: 'isisd', desired_min_tx: 49_999) }
+    e = core.add(interface: 'eth1', peer: '10.0.0.2', local: '10.0.0.1', client: 'isisd', desired_min_tx: 50_000)
+    assert_equal 50_000, e.session.desired_min_tx
+    assert_raise(ArgumentError) { Daemon::Core.new(transport: @wire, scheduler: @scheduler, floor: 0) }
   end
 
   # RFC 5882 4.4: one session for every client that asks.
   def test_clients_share_a_session
     a = add('isisd')
-    b = add('bgp4rd', desired_min_tx: 100_000)
+    b = add('bgp4rd', desired_min_tx: 500_000)
     assert_same a, b
     assert_equal %w[isisd bgp4rd], a.clients
     assert_equal 300_000, a.session.desired_min_tx, 'the first to ask sets the timers'

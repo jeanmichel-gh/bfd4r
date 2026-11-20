@@ -56,9 +56,9 @@ class Programs_Test < Test::Unit::TestCase
   end
 
   # A bfdd4r with a file of sessions; answers its client.
-  def daemon(name, sessions)
+  def daemon(name, sessions, **top)
     file = Tempfile.create(%w[bfdd4r .yml])
-    file.write(JSON.generate('socket' => "@#{@tag}-#{name}", 'sessions' => sessions))
+    file.write(JSON.generate({ 'socket' => "@#{@tag}-#{name}", 'sessions' => sessions }.merge(top.transform_keys(&:to_s))))
     file.close
     stop = Thread::Queue.new
     err = StringIO.new
@@ -98,6 +98,16 @@ class Programs_Test < Test::Unit::TestCase
     row = state(a, B)
     assert_equal [['file'], 300_000, 900_000], row.values_at('clients', 'tx_interval', 'detection_time')
     assert_equal({}, row['discards'], 'TTL 255 came, and nothing was discarded')
+  end
+
+  # docs/timing.md: 300 ms by default; the file may lower it.
+  def test_the_floor_comes_from_the_file
+    key = { 'interface' => 'lo', 'peer' => B, 'local' => A, 'client' => 'isisd', 'desired_min_tx' => 100_000 }
+    plain = daemon('plain', [])
+    e = assert_raise(Client::Error) { plain.call('session.add', key) }
+    assert_match(/under the floor of 300000/, e.message)
+    lowered = daemon('lowered', [], floor: 100_000)
+    assert_equal ['isisd'], lowered.call('session.add', key)['clients']
   end
 
   def test_admin_down_goes_across

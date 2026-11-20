@@ -32,6 +32,8 @@
 require 'json'
 require 'optparse'
 require 'etc'
+$LOAD_PATH.unshift(File.expand_path('../..', __dir__))
+require 'bfd/daemon/core'
 require_relative 'lab'
 require_relative '../support/pcap'
 
@@ -54,7 +56,8 @@ spinners = []
 tcpdump = nil
 begin
   us = opts[:interval] * 1000
-  lab.start(peer: opts[:peer], families: %i[v4], tx: us, rx: us, mult: opts[:mult])
+  lab.start(peer: opts[:peer], families: %i[v4], tx: us, rx: us, mult: opts[:mult],
+                 floor: [us, BFD::Daemon::Core::FLOOR].min)
   lab.wait_for(15) { lab.ours.all? { _1['state'] == 'up' } } or abort 'bench: the session did not come up'
   tcpdump = Process.spawn('ip', 'netns', 'exec', "#{lab.name}-peer", 'tcpdump', '-i', Lab::IF, '-U', '-w', pcap,
                           "udp port 3784 and src #{Lab::OURS4}", %i[out err] => File::NULL)

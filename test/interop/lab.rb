@@ -82,7 +82,9 @@ class Lab
 
   # peer: :frr or :bird. families: which sessions, :v4 and :v6.
   # timers: bfdd4r's, in microseconds; the peer is set to match.
-  def start(peer:, families: %i[v4 v6], tx: 300_000, rx: 300_000, mult: 3)
+  # floor: bfdd4r's, when a bench goes under the default.
+  def start(peer:, families: %i[v4 v6], tx: 300_000, rx: 300_000, mult: 3, floor: nil)
+    @floor = floor
     @peer = peer
     @families = families
     cleanup
@@ -200,7 +202,7 @@ class Lab
         desired_min_tx: tx, required_min_rx: rx, detect_mult: mult }
     end
     file = File.join(@dir, 'bfdd4r.json')
-    File.write(file, JSON.generate(socket: socket, sessions: sessions))
+    File.write(file, JSON.generate({ socket: socket, floor: @floor, sessions: sessions }.compact))
     @ours_pid = Process.spawn('ip', 'netns', 'exec', @ours_ns, RbConfig.ruby, "#{ROOT}/exe/bfdd4r", '-f', file,
                               '--log', File.join(@dir, 'bfdd4r.log'), %i[out err] => File.join(@dir, 'bfdd4r.out'))
     wait_for(10) { cli('api.info') rescue nil } or raise "bfdd4r did not start: #{File.read(File.join(@dir, 'bfdd4r.out'))}"
