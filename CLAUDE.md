@@ -36,9 +36,13 @@ bfd/auth.rb         BFD::Auth: the registry of Authentication Sections
 bfd/auth/           Password (4.2), Md5 and Sha1 (4.3, 4.4), Unknown
 bfd/validation.rb   BFD::Validation: the receive rules of RFC 5880 6.8.6
                     and RFC 5881 5, and the receive policies
+bfd/session.rb      BFD::Session: the state machine and timers of RFC 5880
+                    6.8, told the time, answering with actions
+bfd/runtime/        the clock and the scheduler, copied from isis
 test/unit/          the unit tier: one test file per source file
 test/unit/docs/     tests that hold docs/ to the code
-test/support/       pcap.rb, which reads the fixtures
+test/support/       pcap.rb, which reads the fixtures; pair.rb, two
+                    sessions joined on a manual clock
 test/fixtures/      captures of FRR's bfdd and BIRD, below
 docs/               building-objects.md
 ```
@@ -87,6 +91,24 @@ docs/               building-objects.md
   "This file is part of BFD4R". The license for now is GPL 3 or later,
   until the owner reviews the licenses of all the repositories
   together.
+
+## Time and execution
+
+As isis (routescope `docs/design/protocol-conventions.md`, part 8):
+
+- **Protocol code never reads the system clock and never sleeps.**
+  `BFD::Session` is told the time with each call and answers with
+  actions; it keeps no thread, socket or clock. bfdd4r will run every
+  session on one thread with a `Runtime::Scheduler`, calling `tick` at
+  each session's `next_due`.
+- Time is seconds as a Float, on a monotonic clock. Intervals are
+  microseconds, as on the wire.
+- Randomness is injected too: a session takes a `Random`, for its
+  discriminator and its jitter, so a test with a seed runs the same
+  every time.
+- `test/unit/runtime/time_guard_test.rb` scans `bfd/` for `Time.now`,
+  `Process.clock_gettime` and `sleep`. Only `bfd/runtime/clock.rb` may
+  read the system clock.
 
 ## The fixtures
 
@@ -144,8 +166,8 @@ The steps are in routescope's `docs/design/bfd.md`, "Work".
 
 | Step | Status |
 | --- | --- |
-| 1. `Control`, the authentication sections, `Validation` | This pull request |
-| 2. `Session` on a manual clock | Not started |
+| 1. `Control`, the authentication sections, `Validation` | Done, #1 |
+| 2. `Session` on a manual clock | This pull request |
 | 3. `Fault` and `Behaviour`, the functional tier | Not started |
 | 4. `bfdd4r` and `bfd4r-cli`, interop with FRR and BIRD | Not started |
 | 5. `bfd4r-sim` and the fault matrix | Not started |
@@ -153,6 +175,8 @@ The steps are in routescope's `docs/design/bfd.md`, "Work".
 | 7. routescope's views | Not started |
 | 8. bfd-lab and l3vpn-lab's netem case | Not started |
 
-Authentication in sessions, multihop and Echo come after the first
-version. The sequence number window of RFC 5880 6.7.3 and 6.7.4 needs
-`bfd.RcvAuthSeq`, so it is `Session`'s.
+Authentication in sessions, multihop, Echo and asking for Demand mode
+come after the first version. A session honours Demand mode from the
+remote end. The sequence number window of RFC 5880 6.7.3 and 6.7.4
+needs `bfd.RcvAuthSeq`, so it will be `Session`'s, with
+authentication.
