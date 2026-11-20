@@ -43,10 +43,15 @@ bfd/fault.rb        BFD::Fault: the catalog of crafted packets, one per
                     Validation finding
 bfd/behaviour.rb    BFD::Behaviour: a peer that misbehaves over time, on
                     one of eight scripts
+bfd/daemon/core.rb  Daemon::Core: bfdd4r's sessions, shared by clients,
+                    demultiplexed, counted, on one scheduler; no sockets
+bfd/daemon/events.rb  the event stream, in bgp4r's shape, from vtep4r
+bfd/daemon/loopback.rb  an in-memory network for daemons on one scheduler
 test/unit/          the unit tier: one test file per source file
 test/unit/docs/     tests that hold docs/ to the code
 test/functional/    the functional tier: our session against each
-                    behaviour, and each fault, on a manual clock
+                    behaviour, and each fault; two daemon cores over the
+                    loopback; all on a manual clock
 test/support/       pcap.rb, which reads the fixtures; pair.rb, two
                     sessions joined on a manual clock
 test/fixtures/      captures of FRR's bfdd and BIRD, below
@@ -139,8 +144,8 @@ bundle exec ruby test/run_functional.rb
 ```
 
 The functional tier runs our session against each `Behaviour` and
-sends it each `Fault`, on a manual clock, in one process. `bfdd4r` and
-`bfd4r-sim` join it in steps 4 and 5. The interop and lab tiers come
+sends it each `Fault`, and runs two daemon cores over the loopback, on
+a manual clock, in one process. The programs join it in steps 4b and 5. The interop and lab tiers come
 with the steps that need them (`docs/design/bfd.md` in routescope,
 "Tests").
 
@@ -182,8 +187,10 @@ The steps are in routescope's `docs/design/bfd.md`, "Work".
 | --- | --- |
 | 1. `Control`, the authentication sections, `Validation` | Done, #1 |
 | 2. `Session` on a manual clock | Done, #2 |
-| 3. `Fault` and `Behaviour`, the functional tier | This pull request |
-| 4. `bfdd4r` and `bfd4r-cli`, interop with FRR and BIRD | Not started |
+| 3. `Fault` and `Behaviour`, the functional tier | Done, #3 |
+| 4a. The daemon core: shared sessions, demultiplexing, counters, events | This pull request |
+| 4b. The API, the file, `bfdd4r` and `bfd4r-cli`, one per namespace | Not started |
+| 4c. UDP sockets, interop with FRR and BIRD, the timing bench | Not started |
 | 5. `bfd4r-sim` and the fault matrix | Not started |
 | 6. The clients in isis, ospfv2 and bgp4r | Not started |
 | 7. routescope's views | Not started |
