@@ -135,6 +135,12 @@ class Session_Test < Test::Unit::TestCase
     assert_equal [:ttl_not_255], out[0].findings.map(&:name)
   end
 
+  def test_octets_too_short_to_be_a_packet_are_discarded
+    out = in_state(:init).receive(from_peer(:init).encode.byteslice(0, 20), 0.5)
+    assert_equal [:truncated], out[0].findings.map(&:name)
+    assert_equal :init, in_state(:init).session_state
+  end
+
   def test_octets_are_read
     s = in_state(:down)
     s.receive(from_peer(:down).encode, 0.5)
