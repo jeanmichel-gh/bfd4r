@@ -38,9 +38,10 @@ module BFD
 
       # transport: what Core sends through. clock: a MonotonicClock unless
       # a test gives another.
-      def initialize(transport:, clock: Runtime::MonotonicClock.new, random: Random.new, events: nil)
+      def initialize(transport:, clock: Runtime::MonotonicClock.new, random: Random.new, events: nil,
+                     floor: Core::FLOOR)
         @scheduler = Runtime::Scheduler.new(clock)
-        @core = Core.new(transport: transport, scheduler: @scheduler, random: random, events: events)
+        @core = Core.new(transport: transport, scheduler: @scheduler, random: random, events: events, floor: floor)
         @queue = Thread::Queue.new
         @thread = nil
       end

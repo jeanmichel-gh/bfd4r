@@ -81,13 +81,16 @@ module BFD
           return 0
         end
         udp = Udp.new(port: port, logger: logger)
-        runner = Runner.new(transport: udp)
+        runner = Runner.new(transport: udp, floor: config.floor)
         udp.on_packet = ->(octets, **k) { runner.push_packet(octets, **k) }
         api.runner = runner
         runner.start
         logs = log_events(runner.core.events, logger)
         config.sessions.each { |s| runner.on_loop { |c| c.add(client: FILE_CLIENT, **s) } }
         logger.call(:info, "bfdd4r #{BFD::VERSION} answers on #{api.shown_path}, #{config.sessions.size} session(s) from the file")
+        if config.floor < Core::FLOOR
+          logger.call(:warn, "floor lowered to #{config.floor} microseconds; under #{Core::FLOOR} sessions may flap when busy")
+        end
         stop ? stop.pop : wait_for_signals
         logger.call(:info, 'bfdd4r stopping')
         0

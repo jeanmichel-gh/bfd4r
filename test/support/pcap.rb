@@ -28,12 +28,21 @@ module Pcap
 
   module_function
 
+  # The capture time of each BFD packet, in seconds.
+  def bfd_times(path)
+    each_bfd(path).map(&:first)
+  end
+
   def bfd(path)
+    each_bfd(path).map(&:last)
+  end
+
+  def each_bfd(path)
     data = File.binread(path)
     off = 24
     out = []
     while off < data.bytesize
-      incl = data.byteslice(off + 8, 4).unpack1('V')
+      sec, usec, incl = data.byteslice(off, 12).unpack('VVV')
       frame = data.byteslice(off + 16, incl)
       off += 16 + incl
       ip = frame.byteslice(14..)
@@ -41,7 +50,7 @@ module Pcap
       udp = ip.byteslice(ihl..)
       next unless ip.getbyte(9) == 17 && udp.unpack('nn')[1] == 3784
 
-      out << Packet.new(ip.byteslice(12, 4).bytes.join('.'), ip.getbyte(8), udp.byteslice(8..))
+      out << [sec + (usec / 1e6), Packet.new(ip.byteslice(12, 4).bytes.join('.'), ip.getbyte(8), udp.byteslice(8..))]
     end
     out
   end

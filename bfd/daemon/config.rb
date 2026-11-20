@@ -30,6 +30,7 @@ module BFD
     # default (routescope docs/design/protocol-conventions.md, part 6).
     #
     #   socket: "@bfdd4r"          # @ is the abstract namespace, the default
+    #   floor: 300000              # the least interval a client may ask for
     #   sessions:                  # with no client, for tests and labs
     #     - interface: eth1
     #       peer: 10.0.0.2
@@ -42,11 +43,11 @@ module BFD
     class Config
       class Error < StandardError; end
 
-      TOP = %w[socket sessions].freeze
+      TOP = %w[socket floor sessions].freeze
       SESSION = %w[interface peer local desired_min_tx required_min_rx detect_mult].freeze
       DEFAULT_SOCKET = '@bfdd4r'
 
-      attr_reader :socket, :sessions
+      attr_reader :socket, :floor, :sessions
 
       def self.load(path)
         new(YAML.safe_load(File.read(path), filename: path) || {})
@@ -60,6 +61,7 @@ module BFD
         h = hash.transform_keys(&:to_s)
         refuse(h.keys - TOP, 'key')
         @socket = (h['socket'] || DEFAULT_SOCKET).to_s
+        @floor = h.key?('floor') ? parse_floor(h['floor']) : Core::FLOOR
         @sessions = Array(h['sessions']).map { |s| session(s) }
       end
 
@@ -93,6 +95,15 @@ module BFD
           raise Error, "#{k} #{s[k].inspect} is not a whole number"
         end
         out
+      end
+
+      def parse_floor(value)
+        n = Integer(value)
+        raise ArgumentError unless n.positive?
+
+        n
+      rescue ArgumentError, TypeError
+        raise Error, "floor #{value.inspect} is not a positive number of microseconds"
       end
 
       def refuse(keys, what)

@@ -25,6 +25,7 @@ as in RFC 5880.
 
 ```yaml
 socket: "@bfdd4r"
+floor: 300000
 sessions:
   - interface: eth1
     peer: 10.0.0.2
@@ -34,8 +35,10 @@ sessions:
     detect_mult: 3
 ```
 
-The defaults are FRR's: 300 ms, 300 ms, 3. Nothing under 50 ms is
-taken.
+The defaults are FRR's: 300 ms, 300 ms, 3. The floor is 300 ms: a
+Desired Min TX or Required Min RX under it is refused, from the file or
+a client. `floor` lowers it, for a bench or a router with cores to
+spare; bfdd4r then logs a warning. `docs/timing.md` says why 300 ms.
 
 ## Sessions
 
@@ -44,9 +47,8 @@ taken.
 - Keyed by interface and peer. Every client that asks for the same key
   shares the session (RFC 5882 4.4). The last client to let go sends
   AdminDown for a Detection Time, then the session goes.
-- IPv4 and IPv6. IPv6 is written but not yet tested: it needs two
-  addresses of its own, which the interop tier (step 4c) gives it in
-  network namespaces.
+- IPv4 and IPv6, both tested against FRR's bfdd and BIRD
+  (`test/interop/`).
 
 ## The API
 

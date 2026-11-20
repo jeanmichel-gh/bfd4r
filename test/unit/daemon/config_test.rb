@@ -29,7 +29,15 @@ class Config_Test < Test::Unit::TestCase
 
   def test_an_empty_file_is_the_defaults
     c = Config.new
-    assert_equal ['@bfdd4r', []], [c.socket, c.sessions]
+    assert_equal ['@bfdd4r', 300_000, []], [c.socket, c.floor, c.sessions]
+  end
+
+  def test_the_floor
+    assert_equal 50_000, Config.new('floor' => '50000').floor
+    [0, -1, 'fast', nil].each do |v|
+      e = assert_raise(Config::Error) { Config.new('floor' => v) }
+      assert_match(/floor/, e.message)
+    end
   end
 
   def test_sessions
