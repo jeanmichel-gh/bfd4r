@@ -41,6 +41,9 @@ module BFD
     #
     # on_packet is called from a reader thread with
     # (octets, interface:, source:, ttl:).
+    #
+    # bfd4r-sim uses it too, with listen: false: it binds port 3784 only
+    # when told to (listen), and sends with any TTL and source port.
     class Udp
       PORT = 3784
       SOURCE_PORTS = (49_152..65_535).freeze
@@ -48,8 +51,9 @@ module BFD
 
       attr_accessor :on_packet
 
-      def initialize(port: PORT, logger: nil, random: Random.new)
+      def initialize(port: PORT, logger: nil, random: Random.new, listen: true)
         @port = port
+        @listen = listen
         @logger = logger
         @random = random
         @senders = {}
@@ -60,13 +64,29 @@ module BFD
         @closed = false
       end
 
-      # Core's transport call.
-      def deliver(octets, interface:, peer:, local:)
-        receiver(local)
-        sock = sender(interface, peer, local)
+      # Core's transport call. ttl and source_port are bfd4r-sim's: a
+      # TTL other than 255 for this packet only, and a source port other
+      # than the session's, from a socket of its own.
+      def deliver(octets, interface:, peer:, local:, ttl: 255, source_port: nil)
+        receiver(local) if @listen
+        kept = sender(interface, peer, local)
+        sock = source_port && source_port != kept.local_address.ip_port ? once(interface, local, source_port) : kept
+        hops(sock, local, ttl) if ttl != 255
         sock.send(octets, 0, Addrinfo.udp(peer, @port))
       rescue SystemCallError => e
         log(:warn, "send to #{peer} on #{interface}: #{e.message}")
+      ensure
+        if sock && !sock.equal?(kept)
+          sock.close
+        elsif sock && ttl != 255
+          hops(sock, local, 255)
+        end
+      end
+
+      # Port 3784 on local, for a sender built with listen: false. Raises
+      # what bind raises, Errno::EADDRINUSE when a bfdd4r has it.
+      def listen(local)
+        receiver(local)
       end
 
       # The session is gone: its send socket closes.
@@ -110,6 +130,22 @@ module BFD
         end
       end
 
+      def hops(sock, local, ttl)
+        if family(local) == Socket::AF_INET6
+          sock.setsockopt(Socket::IPPROTO_IPV6, Socket::IPV6_UNICAST_HOPS, ttl)
+        else
+          sock.setsockopt(Socket::IPPROTO_IP, Socket::IP_TTL, ttl)
+        end
+      end
+
+      def once(interface, local, source_port)
+        sock = Socket.new(family(local), Socket::SOCK_DGRAM)
+        hops(sock, local, 255)
+        bind_device(sock, interface)
+        sock.bind(Addrinfo.udp(local, source_port))
+        sock
+      end
+
       # RFC 5881 4: a source port in 49152 to 65535, kept for the session.
       def bind_source(sock, local)
         tries = 0
@@ -141,7 +177,12 @@ module BFD
             sock.setsockopt(Socket::IPPROTO_IP, Socket::IP_RECVTTL, 1)
             sock.setsockopt(Socket::IPPROTO_IP, Socket::IP_PKTINFO, 1)
           end
-          sock.bind(Addrinfo.udp(local, @port))
+          begin
+            sock.bind(Addrinfo.udp(local, @port))
+          rescue SystemCallError
+            sock.close
+            raise
+          end
           @receivers[local] = sock
           @threads << Thread.new(sock) { |s| read(s) }
         end

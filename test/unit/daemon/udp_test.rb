@@ -69,6 +69,39 @@ class Udp_Test < Test::Unit::TestCase
     assert_equal({ interface: 'lo', source: '127.0.0.1', ttl: 255 }, k)
   end
 
+  # bfd4r-sim's sends: a TTL for one packet, then 255 again; a source
+  # port of its choosing.
+  def test_a_ttl_and_a_source_port_for_one_packet
+    @udp.deliver('a', interface: 'lo', peer: '127.0.0.1', local: '127.0.0.1', ttl: 254)
+    assert_equal ['a', 254], @got.pop(timeout: 5).then { [_1[0], _1[1][:ttl]] }
+    @udp.deliver('b', interface: 'lo', peer: '127.0.0.1', local: '127.0.0.1')
+    assert_equal ['b', 255], @got.pop(timeout: 5).then { [_1[0], _1[1][:ttl]] }
+    listener = Socket.new(:INET, :DGRAM)
+    listener.bind(Addrinfo.udp('127.0.0.3', @port))
+    @udp.deliver('c', interface: nil, peer: '127.0.0.3', local: '127.0.0.1', source_port: 40_000)
+    _, from = listener.recvfrom(10)
+    assert_equal 40_000, from.ip_port
+    @udp.deliver('d', interface: nil, peer: '127.0.0.3', local: '127.0.0.1')
+    _, from = listener.recvfrom(10)
+    assert_equal @udp.source_port(interface: nil, peer: '127.0.0.3'), from.ip_port, 'the kept socket again'
+  ensure
+    listener&.close
+  end
+
+  # With listen: false, nothing binds the receive port until listen.
+  def test_listen_false_binds_only_when_told
+    quiet = Udp.new(port: @port, listen: false)
+    quiet.deliver('x', interface: nil, peer: '127.0.0.2', local: '127.0.0.4')
+    probe = Socket.new(:INET, :DGRAM)
+    assert_nothing_raised { probe.bind(Addrinfo.udp('127.0.0.4', @port)) }
+    assert_raise(Errno::EADDRINUSE) { quiet.listen('127.0.0.4') }
+    probe.close
+    quiet.listen('127.0.0.4')
+    assert_raise(Errno::EADDRINUSE) { Socket.new(:INET, :DGRAM).bind(Addrinfo.udp('127.0.0.4', @port)) }
+  ensure
+    quiet&.close
+  end
+
   def test_released_sessions_get_a_new_socket
     @udp.deliver('x', interface: nil, peer: '127.0.0.2', local: '127.0.0.1')
     assert_not_nil @udp.source_port(interface: nil, peer: '127.0.0.2')

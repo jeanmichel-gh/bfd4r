@@ -39,8 +39,11 @@ module BFD
           @address = address
         end
 
-        def deliver(octets, interface:, peer:, local:)
-          @net.carry(octets, from: local || @address, to: peer, interface: interface)
+        # ttl: this packet's, as bfd4r-sim sends; source_port is not
+        # carried.
+        def deliver(octets, interface:, peer:, local:, ttl: nil, source_port: nil)
+          _ = source_port
+          @net.carry(octets, from: local || @address, to: peer, interface: interface, ttl: ttl)
         end
       end
 
@@ -76,14 +79,14 @@ module BFD
       end
 
       # Octets from one address to another, delivered after the delay.
-      def carry(octets, from:, to:, interface: nil)
+      def carry(octets, from:, to:, interface: nil, ttl: nil)
         @sent << [@scheduler.now, from, to, octets]
         return if @cut[from]
 
         core, in_interface = @at[to]
         return unless core
 
-        ttl = @ttl[from]
+        ttl ||= @ttl[from]
         @scheduler.after(@delay) { core.receive(octets, interface: in_interface, source: from, ttl: ttl) }
       end
     end
