@@ -47,6 +47,13 @@ bfd/daemon/core.rb  Daemon::Core: bfdd4r's sessions, shared by clients,
                     demultiplexed, counted, on one scheduler; no sockets
 bfd/daemon/events.rb  the event stream, in bgp4r's shape, from vtep4r
 bfd/daemon/loopback.rb  an in-memory network for daemons on one scheduler
+bfd/daemon/runner.rb  bfdd4r's one thread: the Core, its scheduler, a queue
+bfd/daemon/udp.rb   RFC 5881 over UDP: port 3784, TTL 255 sent and read back
+bfd/daemon/api.rb, client.rb, cli.rb, server.rb, config.rb
+                    the JSON-lines API on @bfdd4r, its client, bfd4r-cli,
+                    the bfdd4r program and its file (docs/daemon.md)
+bfd/logging.rb      log lines to a callable, without Ruby's Logger
+exe/                bfdd4r, bfd4r-cli
 test/unit/          the unit tier: one test file per source file
 test/unit/docs/     tests that hold docs/ to the code
 test/functional/    the functional tier: our session against each
@@ -55,7 +62,7 @@ test/functional/    the functional tier: our session against each
 test/support/       pcap.rb, which reads the fixtures; pair.rb, two
                     sessions joined on a manual clock
 test/fixtures/      captures of FRR's bfdd and BIRD, below
-docs/               building-objects.md
+docs/               building-objects.md, daemon.md
 ```
 
 ## Conventions
@@ -91,8 +98,12 @@ docs/               building-objects.md
   One test file per source file, with the same name and `_test.rb`.
 - **Every Validation rule has a test named for it.** A test fails on a
   rule without one.
-- **Runtime gems: none.** `digest` ships with Ruby. A gem needs a reason
-  in the pull request.
+- **Runtime gems: none.** `digest`, `json`, `socket` and `yaml` ship
+  with Ruby. Ruby 4.0 made `logger` a bundled gem, so `bfd/logging.rb`
+  writes its own lines. A gem needs a reason in the pull request.
+- **One thread owns the sessions.** Socket readers and the API only push
+  work on the Runner's queue, or run a block on its loop with
+  `on_loop`, as vtep4rd's worker.
 - Do not redefine methods of standard library classes.
 - Do not mutate string literals. CI runs with
   `--enable-frozen-string-literal`. An octet buffer is `String.new`,
@@ -145,7 +156,9 @@ bundle exec ruby test/run_functional.rb
 
 The functional tier runs our session against each `Behaviour` and
 sends it each `Fault`, and runs two daemon cores over the loopback, on
-a manual clock, in one process. The programs join it in steps 4b and 5. The interop and lab tiers come
+a manual clock, in one process. It also runs two `bfdd4r` over real
+UDP on 127.0.0.1 and 127.0.0.2, in real time and without root, and
+drives them through their sockets. `bfd4r-sim` joins it in step 5. The interop and lab tiers come
 with the steps that need them (`docs/design/bfd.md` in routescope,
 "Tests").
 
@@ -188,9 +201,9 @@ The steps are in routescope's `docs/design/bfd.md`, "Work".
 | 1. `Control`, the authentication sections, `Validation` | Done, #1 |
 | 2. `Session` on a manual clock | Done, #2 |
 | 3. `Fault` and `Behaviour`, the functional tier | Done, #3 |
-| 4a. The daemon core: shared sessions, demultiplexing, counters, events | This pull request |
-| 4b. The API, the file, `bfdd4r` and `bfd4r-cli`, one per namespace | Not started |
-| 4c. UDP sockets, interop with FRR and BIRD, the timing bench | Not started |
+| 4a. The daemon core: shared sessions, demultiplexing, counters, events | Done, #4 |
+| 4b. UDP, the API, the file, `bfdd4r` and `bfd4r-cli`, one per namespace | This pull request |
+| 4c. Interop with FRR and BIRD, IPv6, the timing bench | Not started |
 | 5. `bfd4r-sim` and the fault matrix | Not started |
 | 6. The clients in isis, ospfv2 and bgp4r | Not started |
 | 7. routescope's views | Not started |

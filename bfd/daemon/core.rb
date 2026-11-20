@@ -269,6 +269,9 @@ module BFD
           entry.timer = nil
           @entries.delete(entry.key)
           @by_discr.delete(entry.session.local_discr)
+          if @transport.respond_to?(:release)
+            @transport.release(interface: entry.interface, peer: entry.peer, local: entry.local)
+          end
           return
         end
         run(entry) { |s, t| s.tick(t) }

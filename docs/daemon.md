@@ -1,0 +1,99 @@
+# bfdd4r and bfd4r-cli
+
+`bfdd4r` is the BFD daemon that isis4rd, ospfd and bgp4rd ask for
+sessions. `bfd4r-cli` is its client. The design is routescope's
+`docs/design/bfd.md`, "The daemon". `test/unit/docs/daemon_test.rb`
+holds the method list below to the code.
+
+## One per network namespace
+
+Every image of our routers starts `bfdd4r`. It binds the abstract socket
+`@bfdd4r` (`\0bfdd4r`) first. A second `bfdd4r` in the same namespace
+finds it in use, says so on standard error and exits with status 0, so
+routers that share a namespace share one daemon.
+
+```sh
+bfdd4r                      # sessions come from the routers
+bfdd4r -f bfdd4r.yml        # sessions from a file too, with the client "file"
+bfdd4r -s @other --log -    # another socket; log to standard output
+```
+
+## The file
+
+YAML. Unknown keys are refused by name. Intervals are in microseconds,
+as in RFC 5880.
+
+```yaml
+socket: "@bfdd4r"
+sessions:
+  - interface: eth1
+    peer: 10.0.0.2
+    local: 10.0.0.1
+    desired_min_tx: 300000
+    required_min_rx: 300000
+    detect_mult: 3
+```
+
+The defaults are FRR's: 300 ms, 300 ms, 3. Nothing under 50 ms is
+taken.
+
+## Sessions
+
+- One hop, RFC 5881: UDP port 3784, a source port in 49152 to 65535 kept
+  for the session, TTL or Hop Limit 255 sent and checked.
+- Keyed by interface and peer. Every client that asks for the same key
+  shares the session (RFC 5882 4.4). The last client to let go sends
+  AdminDown for a Detection Time, then the session goes.
+- IPv4 and IPv6. IPv6 is written but not yet tested: it needs two
+  addresses of its own, which the interop tier (step 4c) gives it in
+  network namespaces.
+
+## The API
+
+One JSON object per line on the socket, each way, as bgp4rd's, isisd's
+and vtep4rd's:
+
+```
+-> {"id":1,"method":"session.add","params":{"interface":"eth1","peer":"10.0.0.2","local":"10.0.0.1","client":"isisd"}}
+<- {"id":1,"result":{"interface":"eth1","peer":"10.0.0.2","state":"down",...}}
+```
+
+| Method | Params | Answers |
+| --- | --- | --- |
+| `api.info` | | version, methods, event kinds, event seq |
+| `session.add` | interface, peer, local, client; desired_min_tx, required_min_rx, detect_mult | the session's row |
+| `session.delete` | interface, peer, client | the clients left, and the state |
+| `session.admin` | interface, peer, down (true or false) | the row |
+| `session.set` | interface, peer; desired_min_tx, required_min_rx, detect_mult | the row |
+| `show.sessions` | interface and peer, or none for all | rows |
+| `show.counters` | | sessions, and packets that found no session, by why |
+| `events.subscribe` | kinds, since | a stream, below |
+| `events.unsubscribe` | | ends the stream |
+
+A row has every RFC 5880 6.8.1 variable by its RFC name (`variables`),
+the negotiated transmit interval and Detection Time in microseconds,
+whether a Poll Sequence runs, the clients, time in state, packets in and
+out, flaps, and discards by finding name.
+
+## Events
+
+`events.subscribe` turns the connection into a stream of lines in
+bgp4r's shape:
+
+```
+{"event":{"seq":3,"time":"2026-11-20T06:10:33.104Z","level":"warn","kind":"session","session":"eth1 10.0.0.2","message":"eth1 10.0.0.2 up -> down (neighbor_signaled_session_down)","data":{"from":"up","to":"down","diag":"neighbor_signaled_session_down","interface":"eth1","peer":"10.0.0.2"}}}
+{"keepalive":"2026-11-20T06:10:48.104Z","seq":3}
+```
+
+The kinds are `session` (a state change), `config` (a session added or
+removed) and `overflow` (events lost).
+
+## bfd4r-cli
+
+```sh
+bfd4r-cli show.sessions --pretty
+bfd4r-cli session.admin interface=eth1 peer=10.0.0.2 down=true
+bfd4r-cli events.subscribe kinds=session
+```
+
+`-s NAME` picks another socket; `$BFD4R_SOCKET` does too.
