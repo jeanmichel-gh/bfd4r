@@ -44,9 +44,8 @@ taken.
 - Keyed by interface and peer. Every client that asks for the same key
   shares the session (RFC 5882 4.4). The last client to let go sends
   AdminDown for a Detection Time, then the session goes.
-- IPv4 and IPv6. IPv6 is written but not yet tested: it needs two
-  addresses of its own, which the interop tier (step 4c) gives it in
-  network namespaces.
+- IPv4 and IPv6, both tested against FRR's bfdd and BIRD
+  (`test/interop/`).
 
 ## The API
 

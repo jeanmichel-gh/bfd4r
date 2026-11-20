@@ -56,13 +56,16 @@ bfd/logging.rb      log lines to a callable, without Ruby's Logger
 exe/                bfdd4r, bfd4r-cli
 test/unit/          the unit tier: one test file per source file
 test/unit/docs/     tests that hold docs/ to the code
+test/interop/       the interop tier: bfdd4r against FRR's bfdd and BIRD in
+                    network namespaces, root (lab.rb, interop_test.rb);
+                    bench.rb, the timing bench (docs/timing.md)
 test/functional/    the functional tier: our session against each
                     behaviour, and each fault; two daemon cores over the
                     loopback; all on a manual clock
 test/support/       pcap.rb, which reads the fixtures; pair.rb, two
                     sessions joined on a manual clock
 test/fixtures/      captures of FRR's bfdd and BIRD, below
-docs/               building-objects.md, daemon.md
+docs/               building-objects.md, daemon.md, timing.md
 ```
 
 ## Conventions
@@ -152,15 +155,23 @@ matrix and in routescope's labs. They do not replace it.
 bundle exec ruby test/run_unit.rb
 bundle exec ruby --enable-frozen-string-literal test/run_unit.rb
 bundle exec ruby test/run_functional.rb
+sudo ruby -I. test/interop/interop_test.rb     # root, FRR and BIRD 2
 ```
 
 The functional tier runs our session against each `Behaviour` and
 sends it each `Fault`, and runs two daemon cores over the loopback, on
 a manual clock, in one process. It also runs two `bfdd4r` over real
 UDP on 127.0.0.1 and 127.0.0.2, in real time and without root, and
-drives them through their sockets. `bfd4r-sim` joins it in step 5. The interop and lab tiers come
-with the steps that need them (`docs/design/bfd.md` in routescope,
-"Tests").
+drives them through their sockets. `bfd4r-sim` joins it in step 5.
+
+The interop tier runs bfdd4r against FRR's bfdd and BIRD 2, installed
+natively, in two network namespaces, over IPv4 and IPv6, as ospfv2's
+and isis's interop tiers run FRR. It needs root. A case omits without
+FRR or BIRD unless `BFD4R_REQUIRE_FRR` or `BFD4R_REQUIRE_BIRD` is set;
+CI sets both. Ubuntu 26.04 enforces an AppArmor profile for bfdd that
+denies its pid file under the lab's pathspace; `Lab.missing` says how to
+unload it. The lab tier comes with the steps that need it
+(`docs/design/bfd.md` in routescope, "Tests").
 
 - **Every Fault entry makes exactly one Validation finding**, and every
   finding has an entry. A test checks both.
@@ -202,8 +213,8 @@ The steps are in routescope's `docs/design/bfd.md`, "Work".
 | 2. `Session` on a manual clock | Done, #2 |
 | 3. `Fault` and `Behaviour`, the functional tier | Done, #3 |
 | 4a. The daemon core: shared sessions, demultiplexing, counters, events | Done, #4 |
-| 4b. UDP, the API, the file, `bfdd4r` and `bfd4r-cli`, one per namespace | This pull request |
-| 4c. Interop with FRR and BIRD, IPv6, the timing bench | Not started |
+| 4b. UDP, the API, the file, `bfdd4r` and `bfd4r-cli`, one per namespace | Done, #5 |
+| 4c. Interop with FRR and BIRD, IPv6, the timing bench | This pull request |
 | 5. `bfd4r-sim` and the fault matrix | Not started |
 | 6. The clients in isis, ospfv2 and bgp4r | Not started |
 | 7. routescope's views | Not started |

@@ -14,6 +14,35 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
+  # The interop tier: bfdd4r against FRR's bfdd and BIRD, natively, in
+  # network namespaces, over IPv4 and IPv6. Root. BFD4R_REQUIRE_FRR and
+  # BFD4R_REQUIRE_BIRD make a run that cannot start them fail rather
+  # than omit.
+  interop:
+    name: interop (root, FRR and BIRD)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq frr bird2 iproute2
+      # Ubuntu 26.04 enforces an AppArmor profile for bfdd that allows only
+      # FRR's default paths, so bfdd cannot write its pid file under the
+      # lab's pathspace. The runner is thrown away after the job. As
+      # ospfv2's CI does for ospfd and isis's for isisd.
+      - name: Unload the bfdd AppArmor profile
+        run: |
+          if [ -f /etc/apparmor.d/bfdd ]; then
+            sudo apparmor_parser -R /etc/apparmor.d/bfdd
+            echo "bfdd profile unloaded"
+          fi
+          sudo grep '^bfdd ' /sys/kernel/security/apparmor/profiles || echo "bfdd not confined"
+      - name: Interop tests, as root
+        run: sudo env "PATH=$PATH" BFD4R_REQUIRE_FRR=1 BFD4R_REQUIRE_BIRD=1 bundle exec ruby -I. test/interop/interop_test.rb
+
   ruby:
     name: ruby ${{ matrix.ruby }}
     runs-on: ubuntu-latest
