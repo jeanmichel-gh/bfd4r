@@ -54,7 +54,8 @@ jobs:
       fail-fast: false
       matrix:
         # Quote versions: unquoted, YAML reads 4.0 as the number 4.
-        ruby: ['3.3', '3.4', '4.0']
+        # From the gemspec's required_ruby_version, 3.2, to the newest.
+        ruby: ['3.2', '3.3', '3.4', '4.0']
         experimental: [false]
         include:
           - ruby: head
