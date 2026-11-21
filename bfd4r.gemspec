@@ -12,7 +12,7 @@ Gem::Specification.new do |s|
   s.require_paths = ['.']
   s.bindir = 'exe'
   s.executables = %w[bfdd4r bfd4r-cli bfd4r-sim with-bfdd4r]
-  # 3.2: Thread::Queue#pop(timeout:), which the tests use, is new in 3.2.
+  # 3.2: bfdd4r's loop waits with Thread::Queue#pop(timeout:), new in 3.2.
   s.required_ruby_version = '>= 3.2'
   # A test must not load this file: git ls-files fails where there is
   # no .git, as in a Docker image (bgp4r CLAUDE.md).
