@@ -42,6 +42,8 @@ jobs:
           sudo grep '^bfdd ' /sys/kernel/security/apparmor/profiles || echo "bfdd not confined"
       - name: Interop tests, as root
         run: sudo env "PATH=$PATH" BFD4R_REQUIRE_FRR=1 BFD4R_REQUIRE_BIRD=1 bundle exec ruby -I. test/interop/interop_test.rb
+      - name: The fault matrix, as root
+        run: sudo env "PATH=$PATH" BFD4R_REQUIRE_FRR=1 BFD4R_REQUIRE_BIRD=1 bundle exec ruby -I. test/interop/fault_matrix_test.rb
 
   ruby:
     name: ruby ${{ matrix.ruby }}
