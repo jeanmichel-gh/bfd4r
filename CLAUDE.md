@@ -53,10 +53,13 @@ bfd/daemon/udp.rb   RFC 5881 over UDP: port 3784, TTL 255 sent and read back
 bfd/daemon/api.rb, client.rb, cli.rb, server.rb, config.rb
                     the JSON-lines API on @bfdd4r, its client, bfd4r-cli,
                     the bfdd4r program and its file (docs/daemon.md)
+bfd/client.rb       BFD::Client, what isisd, ospfd and bgp4rd ask bfdd4r
+                    with: never blocks, asks again when bfdd4r comes back
 bfd/sim/            bfd4r-sim: the injector, its HTTP API, its file and
                     the program (docs/sim.md)
 bfd/logging.rb      log lines to a callable, without Ruby's Logger
-exe/                bfdd4r, bfd4r-cli, bfd4r-sim
+exe/                bfdd4r, bfd4r-cli, bfd4r-sim; with-bfdd4r, the router
+                    images' entrypoint
 test/unit/          the unit tier: one test file per source file
 test/unit/docs/     tests that hold docs/ to the code
 test/interop/       the interop tier: bfdd4r against FRR's bfdd and BIRD in
@@ -177,7 +180,8 @@ UDP on 127.0.0.1 and 127.0.0.2, in real time and without root, and
 drives them through their sockets. `bfd4r-sim`'s injector runs there
 too, against two daemon cores on the manual clock: every behaviour,
 every fault. And `bfd4r-sim` with `bfdd4r` as programs over real UDP,
-driven over HTTP.
+driven over HTTP. `BFD::Client` runs there against two `bfdd4r`,
+one of them stopped and started again, and `with-bfdd4r` as a program.
 
 The interop tier runs bfdd4r against FRR's bfdd and BIRD 2, installed
 natively, in two network namespaces, over IPv4 and IPv6, as ospfv2's
@@ -231,8 +235,9 @@ The steps are in routescope's `docs/design/bfd.md`, "Work".
 | 4b. UDP, the API, the file, `bfdd4r` and `bfd4r-cli`, one per namespace | Done, #5 |
 | 4c. Interop with FRR and BIRD, IPv6, the timing bench | Done, #6 |
 | 5a. `bfd4r-sim`: the injector, its HTTP API, the functional tier | Done, #7 |
-| 5b. The fault matrix against `bfdd4r`, FRR's bfdd and BIRD | This pull request |
-| 6. The clients in isis, ospfv2 and bgp4r | Not started |
+| 5b. The fault matrix against `bfdd4r`, FRR's bfdd and BIRD | Done, #8 |
+| 6a. `remote_state` in events, `BFD::Client`, `with-bfdd4r` | This pull request |
+| 6b to 6d. The clients in isis, ospfv2 and bgp4r | Not started; routescope's `docs/design/bfd-clients.md` |
 | 7. routescope's views | Not started |
 | 8. bfd-lab and l3vpn-lab's netem case | Not started |
 
