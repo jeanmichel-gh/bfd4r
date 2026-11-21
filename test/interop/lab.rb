@@ -30,6 +30,9 @@ require 'open3'
 # run natively as ospfv2's and isis's interop tiers run FRR. Needs root,
 # iproute2, FRR and BIRD 2.
 #
+# For the fault matrix, bfd4r-sim takes our side (ours: :sim), and the
+# peer may be a second bfdd4r (peer: :bfdd4r).
+#
 #   lab = Lab.new('t1').start(peer: :frr)
 #   lab.wait_for { lab.ours.all? { _1['state'] == 'up' } }
 #   lab.stop
@@ -80,12 +83,14 @@ class Lab
     @etc = "/etc/frr/#{name}"
   end
 
-  # peer: :frr or :bird. families: which sessions, :v4 and :v6.
-  # timers: bfdd4r's, in microseconds; the peer is set to match.
-  # floor: bfdd4r's, when a bench goes under the default.
-  def start(peer:, families: %i[v4 v6], tx: 300_000, rx: 300_000, mult: 3, floor: nil)
+  # peer: :frr, :bird or :bfdd4r. ours: :bfdd4r or :sim. families:
+  # which sessions, :v4 and :v6. timers: bfdd4r's, in microseconds; the
+  # peer is set to match. floor: bfdd4r's, when a bench goes under the
+  # default.
+  def start(peer:, ours: :bfdd4r, families: %i[v4 v6], tx: 300_000, rx: 300_000, mult: 3, floor: nil)
     @floor = floor
     @peer = peer
+    @ours = ours
     @families = families
     cleanup
     sh "ip netns add #{@ours_ns}"
@@ -100,8 +105,12 @@ class Lab
       sh "ip -n #{ns} addr add #{v6}/64 dev #{IF} nodad"
       sh "ip -n #{ns} link set #{IF} up"
     end
-    peer == :frr ? start_frr(tx, rx, mult) : start_bird(tx, rx, mult)
-    start_ours(tx, rx, mult)
+    case peer
+    when :frr then start_frr(tx, rx, mult)
+    when :bird then start_bird(tx, rx, mult)
+    when :bfdd4r then start_bfdd4r(@peer_ns, peer_socket, PEER4, OURS4, PEER6, OURS6, tx, rx, mult, 'peer')
+    end
+    ours == :sim ? start_sim : start_bfdd4r(@ours_ns, socket, OURS4, PEER4, OURS6, PEER6, tx, rx, mult, 'bfdd4r')
     self
   end
 
@@ -118,14 +127,16 @@ class Lab
   # ---- bfdd4r ----
 
   def socket = "@bfd4r-#{@name}"
+  def peer_socket = "@bfd4r-#{@name}-peer"
 
   # bfd4r-cli in our namespace, where the abstract socket is.
   def cli(method, params = {})
-    out, err, status = Open3.capture3('ip', 'netns', 'exec', @ours_ns, RbConfig.ruby, "#{ROOT}/exe/bfd4r-cli",
-                                      '-s', socket, method, JSON.generate(params))
-    raise "bfd4r-cli #{method}: #{err}" unless status.success?
+    cli_in(@ours_ns, socket, method, params)
+  end
 
-    JSON.parse(out)
+  # bfd4r-cli to the bfdd4r on the peer's side.
+  def peer_cli(method, params = {})
+    cli_in(@peer_ns, peer_socket, method, params)
   end
 
   # Our sessions, one row each.
@@ -147,7 +158,43 @@ class Lab
 
   # The peer's view of each session: { address => 'up' | 'down' | ... }.
   def theirs
-    @peer == :frr ? frr_sessions : bird_sessions
+    case @peer
+    when :frr then frr_sessions
+    when :bird then bird_sessions
+    when :bfdd4r then peer_cli('show.sessions').to_h { [_1['peer'], _1['state']] }
+    end
+  end
+
+  # ---- bfd4r-sim, on our side ----
+
+  SIM_API = '127.0.0.1:8080'
+
+  # A GET, or a POST with +body+, to bfd4r-sim's API, from inside our
+  # namespace, where its loopback is. One Ruby each, as vtep4r's lab. An
+  # answer with an error raises.
+  def sim(path, body = nil)
+    answer = JSON.parse(sim_ruby(<<~RUBY, path, body ? JSON.generate(body) : ''))
+      u = URI("http://#{SIM_API}\#{ARGV[0]}")
+      r = ARGV[1].empty? ? Net::HTTP.get_response(u) : Net::HTTP.post(u, ARGV[1], 'X-BFD4R' => 'routescope')
+      print r.body
+    RUBY
+    raise "bfd4r-sim #{path}: #{answer['error']}" if answer.is_a?(Hash) && answer['error']
+
+    answer
+  end
+
+  # The same POST +count+ times, every +every+ seconds, in one Ruby: a
+  # Ruby started per packet would be slower than the interval.
+  def sim_repeat(path, body, count:, every:)
+    sim_ruby(<<~RUBY, path, JSON.generate(body), count.to_s, every.to_s)
+      u = URI("http://#{SIM_API}\#{ARGV[0]}")
+      Net::HTTP.start(u.host, u.port) do |h|
+        ARGV[2].to_i.times do
+          h.post(u.path, ARGV[1], 'X-BFD4R' => 'routescope')
+          sleep ARGV[3].to_f
+        end
+      end
+    RUBY
   end
 
   def frr(cmd)
@@ -196,27 +243,55 @@ class Lab
 
   private
 
-  def start_ours(tx, rx, mult)
+  def cli_in(ns, sock, method, params = {})
+    out, err, status = Open3.capture3('ip', 'netns', 'exec', ns, RbConfig.ruby, "#{ROOT}/exe/bfd4r-cli",
+                                      '-s', sock, method, JSON.generate(params))
+    raise "bfd4r-cli #{method}: #{err}" unless status.success?
+
+    JSON.parse(out)
+  end
+
+  # A bfdd4r in +ns+, its sessions to the other side. +tag+ names its
+  # files: bfdd4r.log for ours, peer.log for the peer's.
+  def start_bfdd4r(ns, sock, local4, peer4, local6, peer6, tx, rx, mult, tag)
     sessions = @families.map do |f|
-      { interface: IF, peer: f == :v4 ? PEER4 : PEER6, local: f == :v4 ? OURS4 : OURS6,
+      { interface: IF, peer: f == :v4 ? peer4 : peer6, local: f == :v4 ? local4 : local6,
         desired_min_tx: tx, required_min_rx: rx, detect_mult: mult }
     end
-    file = File.join(@dir, 'bfdd4r.json')
-    File.write(file, JSON.generate({ socket: socket, floor: @floor, sessions: sessions }.compact))
-    @ours_pid = Process.spawn('ip', 'netns', 'exec', @ours_ns, RbConfig.ruby, "#{ROOT}/exe/bfdd4r", '-f', file,
-                              '--log', File.join(@dir, 'bfdd4r.log'), %i[out err] => File.join(@dir, 'bfdd4r.out'))
-    wait_for(10) { cli('api.info') rescue nil } or raise "bfdd4r did not start: #{File.read(File.join(@dir, 'bfdd4r.out'))}"
+    file = File.join(@dir, "#{tag}.json")
+    File.write(file, JSON.generate({ socket: sock, floor: @floor, sessions: sessions }.compact))
+    pid = Process.spawn('ip', 'netns', 'exec', ns, RbConfig.ruby, "#{ROOT}/exe/bfdd4r", '-f', file,
+                        '--log', File.join(@dir, "#{tag}.log"), %i[out err] => File.join(@dir, "#{tag}.out"))
+    (@pids ||= []) << pid
+    wait_for(10) { cli_in(ns, sock, 'api.info') rescue nil } or
+      raise "bfdd4r did not start: #{File.read(File.join(@dir, "#{tag}.out"))}"
+  end
+
+  def start_sim
+    file = File.join(@dir, 'sim.yml')
+    File.write(file, "local: #{OURS4}\ninterface: #{IF}\napi: #{SIM_API}\n")
+    (@pids ||= []) << Process.spawn('ip', 'netns', 'exec', @ours_ns, RbConfig.ruby, "#{ROOT}/exe/bfd4r-sim", '-f', file,
+                                    %i[out err] => File.join(@dir, 'sim.out'))
+    wait_for(10) { sim('/api/status') rescue nil } or raise "bfd4r-sim did not start: #{File.read(File.join(@dir, 'sim.out'))}"
+  end
+
+  def sim_ruby(script, *args)
+    out, err, status = Open3.capture3('ip', 'netns', 'exec', @ours_ns, RbConfig.ruby, '-rnet/http', '-rjson',
+                                      '-e', script, *args)
+    raise "bfd4r-sim #{args.first}: #{err}" unless status.success?
+
+    out
   end
 
   def stop_ours
-    return unless @ours_pid
-
-    Process.kill('TERM', @ours_pid)
-    Process.wait(@ours_pid)
-  rescue Errno::ESRCH, Errno::ECHILD
-    nil
+    Array(@pids).each do |pid|
+      Process.kill('TERM', pid)
+      Process.wait(pid)
+    rescue Errno::ESRCH, Errno::ECHILD
+      nil
+    end
   ensure
-    @ours_pid = nil
+    @pids = nil
   end
 
   def start_frr(tx, rx, mult)

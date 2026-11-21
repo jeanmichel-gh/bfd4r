@@ -61,7 +61,9 @@ test/unit/          the unit tier: one test file per source file
 test/unit/docs/     tests that hold docs/ to the code
 test/interop/       the interop tier: bfdd4r against FRR's bfdd and BIRD in
                     network namespaces, root (lab.rb, interop_test.rb);
-                    bench.rb, the timing bench (docs/timing.md)
+                    bench.rb, the timing bench (docs/timing.md);
+                    fault_matrix_test.rb, the fault matrix
+                    (docs/fault-matrix.md)
 test/functional/    the functional tier: our session against each
                     behaviour, and each fault; two daemon cores and the
                     injector over the loopback; all on a manual clock
@@ -159,7 +161,14 @@ bundle exec ruby test/run_unit.rb
 bundle exec ruby --enable-frozen-string-literal test/run_unit.rb
 bundle exec ruby test/run_functional.rb
 sudo ruby -I. test/interop/interop_test.rb     # root, FRR and BIRD 2
+sudo ruby -I. test/interop/fault_matrix_test.rb
 ```
+
+The fault matrix sends every fault, by `bfd4r-sim`, to `bfdd4r`, FRR's
+bfdd and BIRD in network namespaces, and holds `bfdd4r` to the RFC.
+With `BFD4R_MATRIX_DOC=docs/fault-matrix.md` it writes the document,
+which a unit test holds to the catalog. A new fault goes in with the
+matrix run again.
 
 The functional tier runs our session against each `Behaviour` and
 sends it each `Fault`, and runs two daemon cores over the loopback, on
@@ -221,8 +230,8 @@ The steps are in routescope's `docs/design/bfd.md`, "Work".
 | 4a. The daemon core: shared sessions, demultiplexing, counters, events | Done, #4 |
 | 4b. UDP, the API, the file, `bfdd4r` and `bfd4r-cli`, one per namespace | Done, #5 |
 | 4c. Interop with FRR and BIRD, IPv6, the timing bench | Done, #6 |
-| 5a. `bfd4r-sim`: the injector, its HTTP API, the functional tier | This pull request |
-| 5b. The fault matrix against `bfdd4r`, FRR's bfdd and BIRD | Not started |
+| 5a. `bfd4r-sim`: the injector, its HTTP API, the functional tier | Done, #7 |
+| 5b. The fault matrix against `bfdd4r`, FRR's bfdd and BIRD | This pull request |
 | 6. The clients in isis, ospfv2 and bgp4r | Not started |
 | 7. routescope's views | Not started |
 | 8. bfd-lab and l3vpn-lab's netem case | Not started |
