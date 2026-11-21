@@ -83,12 +83,58 @@ out, flaps, and discards by finding name.
 bgp4r's shape:
 
 ```
-{"event":{"seq":3,"time":"2026-11-20T06:10:33.104Z","level":"warn","kind":"session","session":"eth1 10.0.0.2","message":"eth1 10.0.0.2 up -> down (neighbor_signaled_session_down)","data":{"from":"up","to":"down","diag":"neighbor_signaled_session_down","interface":"eth1","peer":"10.0.0.2"}}}
+{"event":{"seq":3,"time":"2026-11-20T06:10:33.104Z","level":"warn","kind":"session","session":"eth1 10.0.0.2","message":"eth1 10.0.0.2 up -> down (neighbor_signaled_session_down)","data":{"from":"up","to":"down","diag":"neighbor_signaled_session_down","remote_state":"down","interface":"eth1","peer":"10.0.0.2"}}}
 {"keepalive":"2026-11-20T06:10:48.104Z","seq":3}
 ```
 
 The kinds are `session` (a state change), `config` (a session added or
 removed) and `overflow` (events lost).
+
+A `session` event's `remote_state` is the state the peer's last packet
+carried. RFC 5880 6.8.6 takes an Up session Down with diag
+`neighbor_signaled_session_down` both when the peer says Down and when
+it says AdminDown. RFC 5882 4.2 says a client acts on the first and not
+on the second; `remote_state` tells them apart.
+
+## A router's client: BFD::Client
+
+isisd, ospfd and bgp4rd ask for sessions with `BFD::Client`
+(`bfd/client.rb`; routescope's `docs/design/bfd-clients.md`):
+
+```ruby
+require 'bfd/client'
+
+bfd = BFD::Client.new('isisd')         # $BFD4R_SOCKET, else @bfdd4r
+bfd.want(interface: 'eth1', peer: '10.0.12.2', local: '10.0.12.1')
+loop do
+  IO.select(bfd.ios, nil, nil, 0.05)
+  bfd.poll(clock.now).each do |e|
+    # e.type: :state, :connected, :lost or :error
+    # e.state: :down, :init, :up or :admin_down; e.failure? when Up went Down
+  end
+end
+```
+
+- It never blocks and keeps no thread. A router with one loop calls
+  `poll` from it; one with threads, from one of them.
+- `failure?` is true for an Up session that went Down, and not when
+  either end is AdminDown: that is `:admin_down` (RFC 5882 4.2).
+- When bfdd4r is not there, or goes, it says `:lost` once, tries again
+  every second, and on connecting asks again for every wanted session.
+  A session outlives its client's connection, so that is harmless.
+- `close(release: true)` lets go of every wanted session.
+
+## In a container: with-bfdd4r
+
+```sh
+with-bfdd4r isisd -c /etc/isis4r/isisd.yml -l -
+```
+
+starts bfdd4r in the background, then runs the command in its place,
+with the same pid. bfdd4r is started again a second after it fails, and
+not when it exits with 0: stopped, or another one already answers in
+the namespace. It logs to `$BFDD4R_LOG`, `/var/log/bfdd4r.log` by
+default. The router images use it as their entrypoint.
 
 ## bfd4r-cli
 

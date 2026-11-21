@@ -1,0 +1,32 @@
+#!/bin/sh
+# with-bfdd4r COMMAND [ARG...]
+#
+# Starts bfdd4r in the background, then runs COMMAND in its place, so a
+# router image's entrypoint can be "with-bfdd4r isisd ..." (routescope
+# docs/design/bfd-clients.md). bfdd4r is started again a second after
+# it fails. It is not started again when it exits with 0: it was
+# stopped, or another bfdd4r already answers in this network namespace
+# (docs/daemon.md, "One per namespace").
+#
+# bfdd4r logs to $BFDD4R_LOG, /var/log/bfdd4r.log by default, and
+# answers on $BFD4R_SOCKET, @bfdd4r by default.
+#
+# This file is part of BFD4R, GPL 3 or later; see LICENSE.txt.
+
+if [ $# -eq 0 ]; then
+  echo "usage: with-bfdd4r COMMAND [ARG...]" >&2
+  exit 2
+fi
+
+here=$(dirname "$0")
+bfdd4r=$here/bfdd4r
+[ -x "$bfdd4r" ] || bfdd4r=bfdd4r
+log=${BFDD4R_LOG:-/var/log/bfdd4r.log}
+
+(
+  until "$bfdd4r" --log "$log" </dev/null >>"$log" 2>&1; do
+    sleep 1
+  done
+) &
+
+exec "$@"

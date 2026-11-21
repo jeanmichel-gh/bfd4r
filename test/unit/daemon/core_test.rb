@@ -212,9 +212,26 @@ class Core_Test < Test::Unit::TestCase
     receive(from_peer(e, :down))
     kinds = @core.events.since(0).map { [_1.kind, _1.session, _1.level] }
     assert_equal [[:config, 'eth1 10.0.0.2', :info], [:session, 'eth1 10.0.0.2', :info]], kinds
-    assert_equal({ from: :down, to: :init, diag: :none, interface: 'eth1', peer: '10.0.0.2' },
+    assert_equal({ from: :down, to: :init, diag: :none, remote_state: :down, interface: 'eth1', peer: '10.0.0.2' },
                  @core.events.since(1).first.data)
     @scheduler.run_until(5.0)
     assert_equal :warn, @core.events.since(0).last.level, 'going Down is a warning'
+  end
+
+  # RFC 5880 6.8.6 takes an Up session Down with diag 3 both when the
+  # peer says Down and when it says AdminDown. RFC 5882 4.2 says a client
+  # acts on the first and not on the second, so the event says which.
+  def test_a_remote_admin_down_is_told_from_a_remote_down
+    seen = %i[down admin_down].map do |remote|
+      setup
+      e = add
+      receive(from_peer(e, :down))
+      receive(from_peer(e, :up))
+      assert_equal :up, e.session.session_state
+      receive(from_peer(e, remote))
+      @core.events.since(0).last.data.values_at(:from, :to, :diag, :remote_state)
+    end
+    assert_equal [%i[up down neighbor_signaled_session_down down],
+                  %i[up down neighbor_signaled_session_down admin_down]], seen
   end
 end

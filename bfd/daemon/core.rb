@@ -259,6 +259,7 @@ module BFD
           @events.publish(:session, "#{entry.name} #{action.from} -> #{action.to} (#{action.diag})",
                           level: action.to == :down ? :warn : :info, session: entry.name,
                           data: { from: action.from, to: action.to, diag: action.diag,
+                                  remote_state: entry.session.remote_session_state,
                                   interface: entry.interface, peer: entry.peer })
         end
       end
