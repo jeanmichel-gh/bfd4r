@@ -36,6 +36,10 @@ module BFD
   #
   # Each script's timing counts from the moment the peer's session first
   # comes Up, as "after", in seconds.
+  #
+  # bfd4r-sim switches a running session to a script: session: is that
+  # session, and adopt(now) starts the script on it. Its timing counts
+  # from then if the session is already Up.
   class Behaviour
     # name: [what the peer does, what RFC 5880 expects of the session it
     # talks to, the section]
@@ -53,12 +57,12 @@ module BFD
     # The peer's own session, which a test reads to see where it stands.
     attr_reader :name, :session
 
-    def initialize(name, after: 1.0, **session_options)
+    def initialize(name, after: 1.0, session: nil, **session_options)
       raise ArgumentError, "unknown behaviour #{name.inspect}, one of #{SCRIPTS.keys.join(', ')}" unless SCRIPTS.key?(name)
 
       @name = name
       @after = after
-      @session = Session.new(**session_options)
+      @session = session || Session.new(**session_options)
       @up_at = nil
       @events = []
       @fast_next = nil
@@ -89,6 +93,12 @@ module BFD
     def start(now)
       @fast_next = now if @name == :fast_while_down
       outgoing(@session.start(now), now)
+    end
+
+    # Takes over a running session: what start is for a new one.
+    def adopt(now)
+      @fast_next = now if @name == :fast_while_down
+      outgoing([], now)
     end
 
     def next_due

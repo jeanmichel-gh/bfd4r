@@ -38,7 +38,8 @@ bfd/validation.rb   BFD::Validation: the receive rules of RFC 5880 6.8.6
                     and RFC 5881 5, and the receive policies
 bfd/session.rb      BFD::Session: the state machine and timers of RFC 5880
                     6.8, told the time, answering with actions
-bfd/runtime/        the clock and the scheduler, copied from isis
+bfd/runtime/        the clock and the scheduler, copied from isis; loop.rb,
+                    one thread that owns a scheduler, for bfd4r-sim
 bfd/fault.rb        BFD::Fault: the catalog of crafted packets, one per
                     Validation finding
 bfd/behaviour.rb    BFD::Behaviour: a peer that misbehaves over time, on
@@ -52,20 +53,22 @@ bfd/daemon/udp.rb   RFC 5881 over UDP: port 3784, TTL 255 sent and read back
 bfd/daemon/api.rb, client.rb, cli.rb, server.rb, config.rb
                     the JSON-lines API on @bfdd4r, its client, bfd4r-cli,
                     the bfdd4r program and its file (docs/daemon.md)
+bfd/sim/            bfd4r-sim: the injector, its HTTP API, its file and
+                    the program (docs/sim.md)
 bfd/logging.rb      log lines to a callable, without Ruby's Logger
-exe/                bfdd4r, bfd4r-cli
+exe/                bfdd4r, bfd4r-cli, bfd4r-sim
 test/unit/          the unit tier: one test file per source file
 test/unit/docs/     tests that hold docs/ to the code
 test/interop/       the interop tier: bfdd4r against FRR's bfdd and BIRD in
                     network namespaces, root (lab.rb, interop_test.rb);
                     bench.rb, the timing bench (docs/timing.md)
 test/functional/    the functional tier: our session against each
-                    behaviour, and each fault; two daemon cores over the
-                    loopback; all on a manual clock
+                    behaviour, and each fault; two daemon cores and the
+                    injector over the loopback; all on a manual clock
 test/support/       pcap.rb, which reads the fixtures; pair.rb, two
                     sessions joined on a manual clock
 test/fixtures/      captures of FRR's bfdd and BIRD, below
-docs/               building-objects.md, daemon.md, timing.md
+docs/               building-objects.md, daemon.md, sim.md, timing.md
 ```
 
 ## Conventions
@@ -162,7 +165,10 @@ The functional tier runs our session against each `Behaviour` and
 sends it each `Fault`, and runs two daemon cores over the loopback, on
 a manual clock, in one process. It also runs two `bfdd4r` over real
 UDP on 127.0.0.1 and 127.0.0.2, in real time and without root, and
-drives them through their sockets. `bfd4r-sim` joins it in step 5.
+drives them through their sockets. `bfd4r-sim`'s injector runs there
+too, against two daemon cores on the manual clock: every behaviour,
+every fault. And `bfd4r-sim` with `bfdd4r` as programs over real UDP,
+driven over HTTP.
 
 The interop tier runs bfdd4r against FRR's bfdd and BIRD 2, installed
 natively, in two network namespaces, over IPv4 and IPv6, as ospfv2's
@@ -214,8 +220,9 @@ The steps are in routescope's `docs/design/bfd.md`, "Work".
 | 3. `Fault` and `Behaviour`, the functional tier | Done, #3 |
 | 4a. The daemon core: shared sessions, demultiplexing, counters, events | Done, #4 |
 | 4b. UDP, the API, the file, `bfdd4r` and `bfd4r-cli`, one per namespace | Done, #5 |
-| 4c. Interop with FRR and BIRD, IPv6, the timing bench | This pull request |
-| 5. `bfd4r-sim` and the fault matrix | Not started |
+| 4c. Interop with FRR and BIRD, IPv6, the timing bench | Done, #6 |
+| 5a. `bfd4r-sim`: the injector, its HTTP API, the functional tier | This pull request |
+| 5b. The fault matrix against `bfdd4r`, FRR's bfdd and BIRD | Not started |
 | 6. The clients in isis, ospfv2 and bgp4r | Not started |
 | 7. routescope's views | Not started |
 | 8. bfd-lab and l3vpn-lab's netem case | Not started |
