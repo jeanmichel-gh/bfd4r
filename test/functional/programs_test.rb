@@ -169,7 +169,8 @@ class Programs_Test < Test::Unit::TestCase
     event = lines.find { _1['event'] }['event']
     assert_equal ['session', "lo #{B}", 'warn'], event.values_at('kind', 'session', 'level')
     assert_equal({ 'from' => 'up', 'to' => 'down', 'diag' => 'neighbor_signaled_session_down',
-                   'remote_state' => 'admin_down', 'interface' => 'lo', 'peer' => B }, event['data'])
+                   'remote_state' => 'admin_down', 'interface' => 'lo', 'peer' => B,
+                   'vrf' => 'default' }, event['data'])
     assert_match(/\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\z/, event['time'])
   end
 

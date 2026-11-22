@@ -201,7 +201,7 @@ class Core_Test < Test::Unit::TestCase
     e = add
     receive(from_peer(e, :down))
     row = @core.show.first
-    assert_equal %i[interface peer local clients state variables tx_interval detection_time polling since in_state
+    assert_equal %i[interface peer local vrf clients state variables tx_interval detection_time polling since in_state
                     packets_in packets_out flaps discards], row.keys
     assert_equal Session::VARIABLES.keys, row[:variables].keys
     assert_equal [:init, 1, 2], row.values_at(:state, :packets_in, :packets_out)
@@ -212,10 +212,27 @@ class Core_Test < Test::Unit::TestCase
     receive(from_peer(e, :down))
     kinds = @core.events.since(0).map { [_1.kind, _1.session, _1.level] }
     assert_equal [[:config, 'eth1 10.0.0.2', :info], [:session, 'eth1 10.0.0.2', :info]], kinds
-    assert_equal({ from: :down, to: :init, diag: :none, remote_state: :down, interface: 'eth1', peer: '10.0.0.2' },
+    assert_equal({ from: :down, to: :init, diag: :none, remote_state: :down, interface: 'eth1', peer: '10.0.0.2',
+                   vrf: 'default' },
                  @core.events.since(1).first.data)
     @scheduler.run_until(5.0)
     assert_equal :warn, @core.events.since(0).last.level, 'going Down is a warning'
+  end
+
+  # A session keeps the VRF its interface is in, as the transport names
+  # it, and says so in its row and events (routescope
+  # docs/design/bfd-vrf.md). A transport that cannot name one, as the
+  # Wire here, leaves it 'default'.
+  def test_a_session_keeps_its_vrf
+    assert_equal 'default', add.vrf
+    vrfs = { 'eth3' => 'A', 'eth4' => 'B' }
+    wire = @wire
+    wire.define_singleton_method(:vrf_name) { |i| vrfs.fetch(i, 'default') }
+    a = @core.add(interface: 'eth3', peer: '192.168.1.2', local: '192.168.1.1', client: 'bgp4rd')
+    b = @core.add(interface: 'eth4', peer: '192.168.1.2', local: '192.168.1.1', client: 'bgp4rd')
+    assert_equal %w[A B], [a.vrf, b.vrf]
+    assert_equal({ 'eth1' => 'default', 'eth3' => 'A', 'eth4' => 'B' }, @core.show.to_h { [_1[:interface], _1[:vrf]] })
+    assert_equal 'A', @core.events.since(0).find { _1.session == 'eth3 192.168.1.2' }.data[:vrf]
   end
 
   # RFC 5880 6.8.6 takes an Up session Down with diag 3 both when the
