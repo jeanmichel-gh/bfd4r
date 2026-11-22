@@ -40,6 +40,9 @@ module BFD
     #   address. A packet for no session is discarded and counted.
     # - What the sessions send goes to the transport, which answers
     #   deliver(octets, interface:, peer:, local:).
+    # - Each session keeps the VRF its interface is in, as the transport
+    #   names it with vrf_name(interface), or 'default' when it cannot
+    #   (routescope docs/design/bfd-vrf.md). Rows and events show it.
     #
     #   core = Core.new(transport: t, scheduler: s)
     #   core.add(interface: 'eth1', peer: '10.0.0.2', local: '10.0.0.1', client: 'isisd')
@@ -55,12 +58,13 @@ module BFD
 
       # One session and what the daemon keeps about it.
       class Entry
-        attr_reader :key, :local, :session, :clients, :counters
+        attr_reader :key, :local, :vrf, :session, :clients, :counters
         attr_accessor :timer, :since, :retire_at
 
-        def initialize(key, local, session, now)
+        def initialize(key, local, session, now, vrf: 'default')
           @key = key
           @local = local
+          @vrf = vrf
           @session = session
           @clients = []
           @counters = { packets_in: 0, packets_out: 0, flaps: 0, discards: Hash.new(0) }
@@ -111,7 +115,7 @@ module BFD
         if entry.nil?
           entry = create(key, local, timers)
           @events.publish(:config, "session #{entry.name} added for #{client}", session: entry.name,
-                                                                                 data: { client: client })
+                                                                                 data: { client: client, vrf: entry.vrf })
         end
         if entry.retire_at
           # Asked for again while it was going: it stays, and comes back.
@@ -176,7 +180,7 @@ module BFD
       def show
         entries.map do |e|
           s = e.session
-          { interface: e.interface, peer: e.peer, local: e.local, clients: e.clients.dup,
+          { interface: e.interface, peer: e.peer, local: e.local, vrf: e.vrf, clients: e.clients.dup,
             state: s.session_state, variables: s.variables, tx_interval: s.tx_interval,
             detection_time: s.detection_time, polling: s.polling?, since: e.since,
             in_state: now - e.since, packets_in: e.counters[:packets_in], packets_out: e.counters[:packets_out],
@@ -194,7 +198,8 @@ module BFD
         timers = DEFAULTS.merge(timers)
         check_timers(timers)
         session = Session.new(local_discr: new_discr, random: @random, **timers)
-        entry = Entry.new(key, local, session, now)
+        vrf = @transport.respond_to?(:vrf_name) ? @transport.vrf_name(key[0]) : 'default'
+        entry = Entry.new(key, local, session, now, vrf: vrf)
         @entries[key] = entry
         @by_discr[session.local_discr] = entry
         run(entry) { |s, t| s.start(t) }
@@ -260,7 +265,7 @@ module BFD
                           level: action.to == :down ? :warn : :info, session: entry.name,
                           data: { from: action.from, to: action.to, diag: action.diag,
                                   remote_state: entry.session.remote_session_state,
-                                  interface: entry.interface, peer: entry.peer })
+                                  interface: entry.interface, peer: entry.peer, vrf: entry.vrf })
         end
       end
 

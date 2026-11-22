@@ -164,6 +164,7 @@ bundle exec ruby test/run_unit.rb
 bundle exec ruby --enable-frozen-string-literal test/run_unit.rb
 bundle exec ruby test/run_functional.rb
 sudo ruby -I. test/interop/interop_test.rb     # root, FRR and BIRD 2
+sudo ruby -I. test/interop/vrf_test.rb         # root, VRFs, and FRR
 sudo ruby -I. test/interop/fault_matrix_test.rb
 ```
 
@@ -236,10 +237,12 @@ The steps are in routescope's `docs/design/bfd.md`, "Work".
 | 4c. Interop with FRR and BIRD, IPv6, the timing bench | Done, #6 |
 | 5a. `bfd4r-sim`: the injector, its HTTP API, the functional tier | Done, #7 |
 | 5b. The fault matrix against `bfdd4r`, FRR's bfdd and BIRD | Done, #8 |
-| 6a. `remote_state` in events, `BFD::Client`, `with-bfdd4r` | This pull request |
-| 6b to 6d. The clients in isis, ospfv2 and bgp4r | Not started; routescope's `docs/design/bfd-clients.md` |
-| 7. routescope's views | Not started |
-| 8. bfd-lab and l3vpn-lab's netem case | Not started |
+| 6a. `remote_state` in events, `BFD::Client`, `with-bfdd4r` | Done, #9; Ruby 3.2 as the floor, #10 |
+| 6b to 6d. The clients in isis, ospfv2 and bgp4r | Done: isis #95, ospfv2 #61, bgp4r #356 and #357 |
+| 7. routescope's views | Done, routescope #240 to #247 |
+| 8. bfd-lab and l3vpn-lab's netem case | 8a done, isis #111; 8b, bgp4r #359; 8c, routescope's CI, not started |
+| BFD in a VRF, step 1: a receiver per VRF, `vrf` in rows and events | This pull request; routescope's `docs/design/bfd-vrf.md` |
+| BFD in a VRF, steps 2 to 4: bgp4rd, l3vpn-lab, routescope | Not started |
 
 Authentication in sessions, multihop, Echo and asking for Demand mode
 come after the first version. A session honours Demand mode from the

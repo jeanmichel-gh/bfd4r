@@ -108,4 +108,43 @@ class Udp_Test < Test::Unit::TestCase
     @udp.release(interface: nil, peer: '127.0.0.2')
     assert_nil @udp.source_port(interface: nil, peer: '127.0.0.2')
   end
+
+  # An interface's VRF, read once and kept until a session on it is
+  # released (routescope docs/design/bfd-vrf.md). 'default' outside one,
+  # as FRR names it.
+  def test_the_vrf_of_an_interface
+    asked = []
+    udp = Udp.new(port: @port, vrf_of: ->(i) { asked << i; { 'eth3' => 'A' }[i] })
+    assert_equal %w[A A default], [udp.vrf_name('eth3'), udp.vrf_name('eth3'), udp.vrf_name('eth1')]
+    assert_equal %w[eth3 eth1], asked
+    udp.release(interface: 'eth3', peer: '192.168.1.2')
+    udp.vrf_name('eth3')
+    assert_equal %w[eth3 eth1 eth3], asked, 'read again after a release'
+    assert_equal 'default', udp.vrf_name(nil)
+  ensure
+    udp&.close
+  end
+
+  # A receiver in a VRF is bound to the VRF's device. One that cannot
+  # be, here a device that is not there, is not kept, and the send says
+  # why. test/interop/vrf_test.rb runs it in two real VRFs.
+  def test_a_receiver_in_a_vrf_binds_its_device
+    logged = []
+    udp = Udp.new(port: @port, vrf_of: ->(_) { 'no-such-vrf' }, logger: ->(l, m) { logged << [l, m] })
+    udp.deliver('x', interface: 'lo', peer: '127.0.0.1', local: '127.0.0.1')
+    assert_equal [:warn], logged.map(&:first), logged.inspect
+    assert_match(/send to 127.0.0.1 on lo: /, logged.first[1])
+    assert_equal({}, udp.instance_variable_get(:@receivers))
+  ensure
+    udp&.close
+  end
+
+  # What iproute2 says of an interface in no VRF.
+  def test_lo_is_in_no_vrf
+    omit('no ip command') unless system('ip -V', out: File::NULL, err: File::NULL)
+    udp = Udp.new(port: @port)
+    assert_equal 'default', udp.vrf_name('lo')
+  ensure
+    udp&.close
+  end
 end

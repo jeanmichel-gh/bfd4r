@@ -49,6 +49,14 @@ spare; bfdd4r then logs a warning. `docs/timing.md` says why 300 ms.
   AdminDown for a Detection Time, then the session goes.
 - IPv4 and IPv6, both tested against FRR's bfdd and BIRD
   (`test/interop/`).
+- In a VRF too. A session is in the VRF its interface is in: the
+  interface's master, when `ip -j -d link show` says it is a VRF. The
+  client asks as for any other session. bfdd4r receives a VRF's
+  packets on a socket bound to the VRF's device, one per VRF and local
+  address, so two VRFs may hold the same address, as a PE's do
+  (routescope `docs/design/bfd-vrf.md`). Rows and events give `vrf`, the
+  VRF's name or `default`, as FRR names it. `test/interop/vrf_test.rb`
+  runs two VRFs on one address, against bfdd4r and FRR's bfdd.
 
 ## The API
 
@@ -73,7 +81,7 @@ and vtep4rd's:
 | `events.unsubscribe` | | ends the stream |
 
 A row has every RFC 5880 6.8.1 variable by its RFC name (`variables`),
-the negotiated transmit interval and Detection Time in microseconds,
+its `vrf`, the negotiated transmit interval and Detection Time in microseconds,
 whether a Poll Sequence runs, the clients, time in state, packets in and
 out, flaps, and discards by finding name.
 
@@ -83,7 +91,7 @@ out, flaps, and discards by finding name.
 bgp4r's shape:
 
 ```
-{"event":{"seq":3,"time":"2026-11-20T06:10:33.104Z","level":"warn","kind":"session","session":"eth1 10.0.0.2","message":"eth1 10.0.0.2 up -> down (neighbor_signaled_session_down)","data":{"from":"up","to":"down","diag":"neighbor_signaled_session_down","remote_state":"down","interface":"eth1","peer":"10.0.0.2"}}}
+{"event":{"seq":3,"time":"2026-11-20T06:10:33.104Z","level":"warn","kind":"session","session":"eth1 10.0.0.2","message":"eth1 10.0.0.2 up -> down (neighbor_signaled_session_down)","data":{"from":"up","to":"down","diag":"neighbor_signaled_session_down","remote_state":"down","interface":"eth1","peer":"10.0.0.2","vrf":"default"}}}
 {"keepalive":"2026-11-20T06:10:48.104Z","seq":3}
 ```
 
