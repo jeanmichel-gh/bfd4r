@@ -60,6 +60,9 @@ module BFD
       class Entry
         attr_reader :key, :local, :vrf, :session, :clients, :counters
         attr_accessor :timer, :since, :retire_at
+        # The last time the session went from Up to Down, as its event said
+        # it: the event's wall time, seq and diag. nil until it has.
+        attr_accessor :last_down
 
         def initialize(key, local, session, now, vrf: 'default')
           @key = key
@@ -71,6 +74,7 @@ module BFD
           @since = now
           @timer = nil
           @retire_at = nil
+          @last_down = nil
         end
 
         def interface
@@ -184,7 +188,7 @@ module BFD
             state: s.session_state, variables: s.variables, tx_interval: s.tx_interval,
             detection_time: s.detection_time, polling: s.polling?, since: e.since,
             in_state: now - e.since, packets_in: e.counters[:packets_in], packets_out: e.counters[:packets_out],
-            flaps: e.counters[:flaps], discards: e.counters[:discards].to_h }
+            flaps: e.counters[:flaps], discards: e.counters[:discards].to_h, last_down: e.last_down&.dup }
         end
       end
 
@@ -260,12 +264,17 @@ module BFD
           action.findings.select { |f| f.action == :discard }.each { |f| entry.counters[:discards][f.name] += 1 }
         when Session::StateChange
           entry.since = now
-          entry.counters[:flaps] += 1 if action.from == :up && action.to == :down
-          @events.publish(:session, "#{entry.name} #{action.from} -> #{action.to} (#{action.diag})",
+          flap = action.from == :up && action.to == :down
+          entry.counters[:flaps] += 1 if flap
+          ev = @events.publish(:session, "#{entry.name} #{action.from} -> #{action.to} (#{action.diag})",
                           level: action.to == :down ? :warn : :info, session: entry.name,
                           data: { from: action.from, to: action.to, diag: action.diag,
                                   remote_state: entry.session.remote_session_state,
                                   interface: entry.interface, peer: entry.peer, vrf: entry.vrf })
+          # Kept with the row, so a reader that was not listening when it
+          # happened, or came after its event left the backlog, still has
+          # it. The wall time, since the in_state clock is monotonic.
+          entry.last_down = { time: ev.iso_time, seq: ev.seq, diag: action.diag } if flap
         end
       end
 

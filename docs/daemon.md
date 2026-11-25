@@ -85,6 +85,14 @@ its `vrf`, the negotiated transmit interval and Detection Time in microseconds,
 whether a Poll Sequence runs, the clients, time in state, packets in and
 out, flaps, and discards by finding name.
 
+`last_down` is the last time the session went from Up to Down, a flap,
+as its `session` event said it: the event's wall `time`, its `seq` and
+the `diag`. It is `null` until the session has gone down once. A reader
+that was not subscribed then, or comes after the event left the
+backlog, still has it. AdminDown is not a Down here, as it is not a
+flap. `in_state` counts on the monotonic clock; `time` is the wall
+clock, as events are.
+
 ## Events
 
 `events.subscribe` turns the connection into a stream of lines in

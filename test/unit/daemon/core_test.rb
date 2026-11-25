@@ -197,12 +197,29 @@ class Core_Test < Test::Unit::TestCase
     assert_in_delta 2.0 - 0.9, row[:in_state], 1e-9
   end
 
+  # The last Up to Down, with its event's wall time, seq and diag: a
+  # flap, so not a session that was never Up, nor one AdminDown.
+  def test_last_down_is_the_last_flap_and_its_event
+    e = add
+    assert_nil @core.show.first[:last_down]
+    receive(from_peer(e, :down))
+    receive(from_peer(e, :up))
+    assert_nil @core.show.first[:last_down], 'Up, never Down from Up'
+    @scheduler.run_until(2.0)
+    down = @core.events.since(0).find { _1.kind == :session && _1.data[:to] == :down }
+    assert_equal({ time: down.iso_time, seq: down.seq, diag: :control_detection_time_expired }, @core.show.first[:last_down])
+    receive(from_peer(e, :init))
+    receive(from_peer(e, :up))
+    @core.admin(interface: 'eth1', peer: '10.0.0.2', down: true)
+    assert_equal down.seq, @core.show.first[:last_down][:seq], 'AdminDown is not a Down'
+  end
+
   def test_show_has_every_variable_and_count
     e = add
     receive(from_peer(e, :down))
     row = @core.show.first
     assert_equal %i[interface peer local vrf clients state variables tx_interval detection_time polling since in_state
-                    packets_in packets_out flaps discards], row.keys
+                    packets_in packets_out flaps discards last_down], row.keys
     assert_equal Session::VARIABLES.keys, row[:variables].keys
     assert_equal [:init, 1, 2], row.values_at(:state, :packets_in, :packets_out)
   end
